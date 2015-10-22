@@ -1,22 +1,26 @@
-% close all
+close all
 clear all
 
  %% Define parameters of files and image set.
-exp_.image_dir           = 'C:\Users\soskinne\Documents\Data\BCM Microscope\2015_09_29_PulsingNLS\';
+exp_.root_dir            = 'C:\Users\frink\Documents\MATLAB\Dicty\2015_09_29_PulsingNLS\'; 
+exp_.image_dir           = [exp_.root_dir 'Images\'];
 exp_.name_root           = 'Image_';
-exp_.images_to_analyze   = [1:3];
+exp_.images_to_analyze   = 1;
+exp_.Phase_channel       = 1;
+exp_.RFP_channel         = 2;
+exp_.GFP_channel         = 3;
 exp_.DAPI_channel        = 4;
-exp_.Fluo_channel        = 2;
+
 exp_.image_size          = [1024 1024];
 
 display_processing       = true;
 
-if ~exist(exp_.image_dir); mkdir(exp_.image_dir, '\Data Analysis\Segmentation'); end
+if ~exist(exp_.image_dir,'dir'); mkdir(exp_.root_dir, '\Data Analysis\Segmentation'); end
 
 
 
 %% Count the number of slices for each z-stack
-fprintf(1,['\nCounting slices'])
+fprintf(1,['Counting slices\n'])
 exp_.num_z = [];
 folder_contents = dir(exp_.image_dir);
 for i_im = 1:size(folder_contents,1)   
@@ -31,34 +35,31 @@ for i_im = 1:size(folder_contents,1)
         zslice = str2num(nums_in_filename{size(nums_in_filename,2)-1});
         
         % loop repeats over all zslices, saving the last
-        exp_.num_z(im_num) = zslice;    
-        
-    end    
-    
+        exp_.num_z(im_num) = zslice;            
+    end        
 end
 
 clear folder_contents nums_in_filename file_name im_num zslice 
 
-
-
-
 %% Process each image declared above
 for i_im = exp_.images_to_analyze
     
-    fprintf(1,['\nLoading and segmenting image ' num2str(i_im) '.'])
+    fprintf(1,['Loading and segmenting image ' num2str(i_im) '.\n'])
     
     
     %% 1) Inialize masks
     DAPI_mask = zeros(exp_.image_size(1),exp_.image_size(2),exp_.num_z(i_im));
-    Fluo_mask = zeros(exp_.image_size(1),exp_.image_size(2),exp_.num_z(i_im));
+    RFP_mask = zeros(exp_.image_size(1),exp_.image_size(2),exp_.num_z(i_im));
+%     DAPI_org = zeros(exp_.image_size(1),exp_.image_size(2),exp_.num_z(i_im));
 
 
     %% 2) Initial segmentation: edge detection and morph opening
     for i_z = 1:exp_.num_z(i_im);
         
         % Load zslice
-        Fluo_temp = double(imread([exp_.image_dir exp_.name_root num2str(i_im,'%03d') 'z' num2str(i_z,'%02g') 'c' num2str(exp_.Fluo_channel) '.tif']));
+        RFP_temp = double(imread([exp_.image_dir exp_.name_root num2str(i_im,'%03d') 'z' num2str(i_z,'%02g') 'c' num2str(exp_.RFP_channel) '.tif']));
         DAPI_temp = double(imread([exp_.image_dir exp_.name_root num2str(i_im,'%03d') 'z' num2str(i_z,'%02g') 'c' num2str(exp_.DAPI_channel) '.tif']));
+%         DAPI_org(:,:,i_z)=DAPI_temp;
         
         % For DAPI, calc a version of the Sobel filter
         [g_x, g_y] = gradient(DAPI_temp);
@@ -69,19 +70,20 @@ for i_im = exp_.images_to_analyze
         DAPI_mask(:,:,i_z) = imopen(DAPI_mask(:,:,i_z), strel('disk',4));
         
         % For Fluorescence, Gaussian filter and open image
-        Fluo_mask(:,:,i_z) = imfilter(Fluo_temp, fspecial('gaussian', 5, 2));        
-        Fluo_mask(:,:,i_z) = imopen(Fluo_mask(:,:,i_z), strel('disk',4));
+        RFP_mask(:,:,i_z) = imfilter(RFP_temp, fspecial('gaussian', 5, 2));        
+        RFP_mask(:,:,i_z) = imopen(RFP_mask(:,:,i_z), strel('disk',4));
        
 
     end
     
-    clear DAPI_temp Fluo_temp V_DAPI norm se_size g_x g_y
+    clear DAPI_temp RFP_temp V_DAPI norm se_size g_x g_y
+
    
     
     
     %% 3) Normalize values [Min Max] -> [0.0 1.0]
     DAPI_mask = mat2gray(DAPI_mask);
-    Fluo_mask = mat2gray(Fluo_mask);    
+    RFP_mask = mat2gray(RFP_mask);    
     
     
     
@@ -97,7 +99,7 @@ for i_im = exp_.images_to_analyze
         bw_out  = zeros(exp_.image_size);    % Intialize output image
         low_th  = 500;                       % Area lowerbound
         high_th = 12000;                     % Area upperbound
-        circ_th = 0.75;                      % Circularity lowerbound
+        circ_th = 0.75;                      % Circularity lowerbound        
         for th_I = (1/I_max):(1/I_max):(I_max-1)/I_max
             bw_temp = imfill(im2bw(im_temp,th_I),'holes');      % threshold the image and fill
             bw_temp = imerode(bw_temp,strel('disk',1));         % erode thresholded and filled image
@@ -113,7 +115,7 @@ for i_im = exp_.images_to_analyze
             im_temp(bw_true) = 0;                               % Mark recognized regions (ignore in further thresholds)
         end         
         DAPI_mask(:,:,i_z) = bw_out;
-    end
+    end    
     
     clear I_max bw_area bw_circ bw_out bw_peri bw_prop bw_temp bw_true circ_th high_th
     clear im_temp ind_true low_th th_I
@@ -123,11 +125,11 @@ for i_im = exp_.images_to_analyze
     % Found that occassionally debris will produce crazy fluorescence, messing up thresholding.
     % So, threshold zlices independently and then take max projection 
     for i_z = 1:exp_.num_z(i_im)        
-        Fluo_mask(:,:,i_z) = logical(im2bw(Fluo_mask(:,:,i_z), graythresh(Fluo_mask(:,:,i_z))));    
+        RFP_mask(:,:,i_z) = logical(im2bw(RFP_mask(:,:,i_z), graythresh(RFP_mask(:,:,i_z))));    
     end
-    Fluo_MaxP = max(Fluo_mask, [], 3);
+    RFP_MaxP = max(RFP_mask, [], 3);
     
-    clear Fluo_mask
+    clear RFP_mask
     
     
     % Display progress of image processing
@@ -141,7 +143,7 @@ for i_im = exp_.images_to_analyze
 
     %% 5) Morphological processing
     % Open max projection of fluorescence maxP
-    Fluo_MaxP = imopen(Fluo_MaxP, strel('disk', 20));
+    RFP_MaxP = imopen(RFP_MaxP, strel('disk', 20));
     
     % Join slices in z
     DAPI_mask = imdilate(DAPI_mask, ones(1,1,7));
@@ -184,7 +186,7 @@ for i_im = exp_.images_to_analyze
     DAPI_MaxP = max(DAPI_mask, [], 3);
 
     % Adjust fluorescence map to include all pixels in nucleus map
-    Fluo_MaxP = Fluo_MaxP ~=0 | DAPI_MaxP ~=0;
+    RFP_MaxP = RFP_MaxP ~=0 | DAPI_MaxP ~=0;
 
     
     % Display progress of image processing
@@ -199,11 +201,10 @@ for i_im = exp_.images_to_analyze
     
     
     %% 6) Save file
-    save([exp_.image_dir '\Data Analysis\Segmentation\' exp_.name_root 'seg' num2str(i_im, '%03d') '_1.mat'], 'DAPI_mask', 'Fluo_MaxP')
+    save([exp_.root_dir '\Data Analysis\Segmentation\' exp_.name_root 'seg' num2str(i_im, '%03d') '_1.mat'], 'DAPI_mask', 'RFP_MaxP')    
+%     clear L_mask DAPI_cc DAPI_mask RFP_MaxP DAPI_MaxP
     
-    clear L_mask DAPI_cc DAPI_mask Fluo_MaxP DAPI_MaxP
-
-
+%     fprintf(1,'\n')
 end
 
 
