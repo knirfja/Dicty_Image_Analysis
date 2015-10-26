@@ -1,22 +1,28 @@
 clear all
 close all
 
-
-image_dir = 'C:\Users\soskinne\Documents\Data\BCM Microscope\2015_09_29_PulsingNLS\';
+root_dir            = 'C:\Users\frink\Documents\MATLAB\Dicty\2015_09_29_PulsingNLS\'; 
+image_dir           = [root_dir 'Images\'];
+% image_dir = 'C:\Users\soskinne\Documents\Data\BCM Microscope\2015_09_29_PulsingNLS\';
 name_root = 'Image_';
 images_to_analyze = [1];
+
+dig_z=2;
+image_size          = 1024;
 
 DAPI_channel = 4;
 Fluo_channel = 2;
 Disp_channel = 1;
       
-
+%%
 for i1 = images_to_analyze
     
     %%% Prepare all images
     fprintf(1,['\nManually Adjusting Mask ' num2str(i1)])
-    load([image_dir 'Data Analysis\Segmentation\' name_root 'seg' num2str(i1, '%03d') '_1.mat'])
     %load([image_dir '\Data Analysis\Segmentation\' name_root 'seg' num2str(i1, '%03d') '_test_2.mat'], 'DAPI_mask')
+    load([root_dir 'Data Analysis\Segmentation\' name_root 'seg' num2str(i1, '%03d') '_1.mat'])
+    Fluo_MaxP=RFP_MaxP;
+    
     
     Disp = double(imadjust(imread([image_dir name_root num2str(i1, '%03d') 'z' num2str(6, ['%0' num2str(dig_z) 'd']) 'c' num2str(Disp_channel) '.tif'])));
     Fluo = double(imadjust(imread([image_dir name_root num2str(i1, '%03d') 'z' num2str(6, ['%0' num2str(dig_z) 'd']) 'c' num2str(Fluo_channel) '.tif'])));
@@ -29,20 +35,20 @@ for i1 = images_to_analyze
     image = i1;
     slices = size(DAPI_mask,3);
 
-    Fluo_temp = zeros(image_size,image_size,slices);
-    x_Fluo = 1E2:1E2:1E5;
-
-    for i2 = 1:slices;
-        Fluo_temp(:,:,i2) = double(imread([image_dir name_root num2str(image,'%03d') 'z' num2str(i2,['%0' num2str(dig_z) 'd']) 'c' num2str(Fluo_channel) '.tif']));                
-    end
-
-    Fluo_image_maxp = max(Fluo_temp,[],3);
-    clear Fluo_temp
-    starting_contrast = 7500;
-    Fluo_MaxP = zeros(image_size,image_size);
-    Fluo_MaxP(Fluo_image_maxp>=starting_contrast) = 1;
-    Fluo_MaxP = imfill(Fluo_MaxP,'holes');
-    Fluo_MaxP = imopen(Fluo_MaxP,strel('disk',5));
+%     Fluo_temp = zeros(image_size,image_size,slices);
+%     x_Fluo = 1E2:1E2:1E5;
+% 
+%     for i2 = 1:slices;
+%         Fluo_temp(:,:,i2) = double(imread([image_dir name_root num2str(image,'%03d') 'z' num2str(i2,['%0' num2str(dig_z) 'd']) 'c' num2str(Fluo_channel) '.tif']));                
+%     end
+% 
+%     Fluo_image_maxp = max(Fluo_temp,[],3);
+%     clear Fluo_temp
+%     starting_contrast = 7500;
+%     Fluo_MaxP = zeros(image_size,image_size);
+%     Fluo_MaxP(Fluo_image_maxp>=starting_contrast) = 1;
+%     Fluo_MaxP = imfill(Fluo_MaxP,'holes');
+%     Fluo_MaxP = imopen(Fluo_MaxP,strel('disk',5));
     
     
         
@@ -52,7 +58,7 @@ for i1 = images_to_analyze
     while editing == true;
         DAPI_MaxP = max(DAPI_mask, [], 3);
         
-        Fluo_MaxP(DAPI_MaxP~=0) = 1;
+%         Fluo_MaxP(DAPI_MaxP~=0) = 1;
         
 
                
@@ -481,7 +487,7 @@ for i1 = images_to_analyze
             
             clear BW cells_selected Fluo_MaxL
             
-        elseif button == 'w'  %% Use DIC to difine cell boundary - looks for white cell boundary.
+        elseif button == 'w'  %% Use DIC to define cell boundary - looks for white cell boundary.
                 
             
             DIC_temp = imread([image_dir name_root num2str(image,'%03d') 'z' num2str(6,['%0' num2str(dig_z) 'd']) 'c1.tif']);
@@ -575,6 +581,123 @@ for i1 = images_to_analyze
             
             clear x y Fluo_image_maxp Fluo_temp x_Fluo n_Fluo f_Fluo
                         
+            % AF added 20151024
+        elseif button == 'j'  %% Join two cells together                                    
+            %%  Select centers of cells to join                
+                Fluo_lb =bwlabel(Fluo_MaxP);
+                
+                figure(4); imagesc(Fluo_lb)
+%                 axis equal
+                [x,y,button] = ginput;                                
+                
+                if length(x) == 2
+                    x = uint16(round(x));
+                    y = uint16(round(y));
+                
+                    Cell1=zeros(size(Fluo_MaxP));
+                    Cell2=zeros(size(Fluo_MaxP));
+                    
+                    Temp2(Temp==Temp(y(i4),x(i4)))=1;
+                    
+                    
+                else
+                    disp('Please connect only two cells')
+                end
+                
+                for i4=1:length(x)
+%                     Cell_num1(i4) = Temp(y(i4),x(i4))   
+%                     [i,j]=ind2sub(size(Temp),find(Temp==Temp(y(i4),x(i4))));
+                    
+                end
+                clear i4
+                
+                figure(4); imagesc(Temp2);
+                
+                
+            if Cell_num1 ~= 0
+                %%  Select centers of cells
+                Centers_2D = zeros(size(MaxP_cell));
+                %Centers_3D = zeros(size(Cell));
+                figure(4); imagesc(Fluo_MaxP)
+                axis equal
+                [x,y,button] = ginput;
+                x = uint8(round(x));
+                y = uint8(round(y));
+
+
+                %% Solve Laplace's equation within
+                result    = MaxP_cell;
+                idx       = find(MaxP_cell);
+                grid      = zeros(size(MaxP_cell));
+                grid(idx) = 1:length(idx);
+                [M,N]     = size(grid);
+
+                % Use the boundary pixels to form the right side of the linear system.
+                boundaryCond = zeros(size(MaxP_cell));
+                boundaryCond(~MaxP_cell) = -1;
+
+                % Add in centers
+                for pts = 1:length(x)
+                    boundaryCond(y(pts),x(pts)) = -10;
+                end
+
+                rightside = zeros(M,N);
+                rightside(2:(M-1),2:(N-1)) = boundaryCond(1:(M-2),2:(N-1)) + ...
+                    boundaryCond(3:M,2:(N-1)) + boundaryCond(2:(M-1),1:(N-2)) + ...
+                    boundaryCond(2:(M-1),3:N);
+                rightside = rightside(idx);
+
+                % Form the sparse D matrix from the numbered nodes of the grid matrix.
+                % This part is borrowed from toolbox/matlab/demos/delsq.m.
+                % Connect interior points to themselves with 4's.
+                i_d = grid(idx);
+                j_d = grid(idx);
+                s = 4*ones(size(idx));
+
+                % for k = north, east, south, west
+                for k_d = [-1 M 1 -M]
+                    % Possible neighbors in the k-th direction
+                    Q = grid(idx+k_d);
+                    % Index of points with interior neighbors
+                    q = find(Q);
+                    % Connect interior points to neighbors with -1's.
+                    i_d = [i_d; grid(idx(q))]; %#ok<AGROW>
+                    j_d = [j_d; Q(q)];
+                    s = [s; -ones(length(q),1)];
+                end
+                D = sparse(i_d,j_d,s);
+
+                % Solve the linear system.
+                x = D \ rightside;
+                result(idx) = x;
+
+                result(~MaxP_cell) = -Inf;
+                L = watershed(result);
+                BG_label = L(1,1);
+                L(L==BG_label) = 0;
+
+                L_unpadded = L(2:(end-1),2:(end-1));
+
+                for k_z = 1:size(Cell,3)
+                    Cell_z = Cell(:,:,k_z);
+                    Cell_z(L_unpadded==0) = 0;
+                    Cell(:,:,k_z) = Cell_z;
+                end
+
+                DAPI_mask(cc.PixelIdxList{Cell_num}) = 0;
+
+                DAPI_mask(min(i):max(i), min(j):max(j), min(k):max(k)) = DAPI_mask(min(i):max(i), min(j):max(j), min(k):max(k)) + uint8(Cell);
+
+                cc = bwconncomp(logical(DAPI_mask));
+                DAPI_mask = labelmatrix(cc);
+
+                close(4)
+
+                clear Cell Cell_num Cell_z Centers_2D D L L_unpadded MaxP_cell MaxP_cell_unpadded boundaryCond grid idx x s result rightside
+                clear Q q x y button M N i_d j_d i j k k_d k_z pts
+            
+            end
+            
         end
     end
     
@@ -631,7 +754,7 @@ for i1 = images_to_analyze
     
     
        
-    save([image_dir 'Data Analysis\Segmentation\' name_root 'seg' num2str(i1, '%03d') '_2.mat'], 'DAPI_mask', 'InNu_mask', 'LcFull')
+    save([root_dir 'Data Analysis\Segmentation\' name_root 'seg' num2str(i1, '%03d') '_2.mat'], 'DAPI_mask', 'InNu_mask', 'LcFull')
     
     clear Cell Centers D DAPI L mask
 end
