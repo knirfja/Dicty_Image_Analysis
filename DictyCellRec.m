@@ -1,84 +1,85 @@
-function Cell_mask = DictyCellRec(exp_,i_im)
-
-fprintf(1,['Loading image and segmenting cell mask ' num2str(i_im) '.\n'])
-
-
-%% 1) Inialize masks
-Phase_mask = zeros(exp_.image_size(1),exp_.image_size(2),exp_.num_z(i_im));
-RFP_mask = zeros(exp_.image_size(1),exp_.image_size(2),exp_.num_z(i_im));
-GFP_mask = zeros(exp_.image_size(1),exp_.image_size(2),exp_.num_z(i_im));
-%     DAPI_org = zeros(exp_.image_size(1),exp_.image_size(2),exp_.num_z(i_im));
+function [ LcFull, Cell_mask, DAPI_mask ] = DictyCellRec( exp, DAPI_mask )
+%UNTITLED Summary of this function goes here
+%   Detailed explanation goes here
 
 
-%% 2) Initial segmentation: edge detection and morph opening
-%     for i_z = 1:exp_.num_z(i_im);
-for i_z = 1
+%% Cell outlines by thresholding
 
-    % Load zslice
-    RFP_temp = double(imread([exp_.image_dir exp_.name_root num2str(i_im,'%03d') 'z' num2str(i_z,'%02g') 'c' num2str(exp_.RFP_channel) '.tif']));
-    GFP_temp = double(imread([exp_.image_dir exp_.name_root num2str(i_im,'%03d') 'z' num2str(i_z,'%02g') 'c' num2str(exp_.GFP_channel) '.tif']));
-    Phase_temp = double(imread([exp_.image_dir exp_.name_root num2str(i_im,'%03d') 'z' num2str(i_z,'%02g') 'c' num2str(exp_.Phase_channel) '.tif']));
+DIC_temp =  imread([exp.image_dir exp.name_root num2str(exp.image_id, '%03d') 'z' num2str(6, ['%0' num2str(exp.dig_z) 'd']) 'c' num2str(exp.Disp_channel) '.tif']);
+DIC_temp = imadjust(DIC_temp);
 
-    % Debug#
-    figure; imshow(GFP_temp,[]); figure; imshow(RFP_temp,[]); figure; imshow(Phase_temp,[]);
+% Threshold image
+DIC_thresh = im2bw(DIC_temp, graythresh(DIC_temp));
+DIC_thresh = imerode(DIC_thresh,strel('disk',5));
+DIC_thresh = imdilate(DIC_thresh,strel('disk',2));
+DIC_thresh = imclose(DIC_thresh,strel('disk',15));
+%     figure(2); imshow(DIC_thresh)
 
-    % Normalize values [Min Max] -> [0.0 1.0]
+% Create large outline of entire cell mass
+DIC_Outline = imclose(DIC_thresh,strel('disk',35));    
+%     DIC_Outline = imdilate(DIC_Outline,strel('disk',10));
+DIC_Outline=imfill(DIC_Outline,'holes');    
+%     figure(4); imshow(DIC_Outline);
 
-    RFP_temp = mat2gray(RFP_temp);    
-    GFP_temp = mat2gray(GFP_temp);
-    Phase_temp = mat2gray(Phase_temp);       
+% Segment cells by removing the interior edges
+DIC_temp= DIC_Outline & ~DIC_thresh;
+DIC_temp=imopen(DIC_temp,strel('disk',25));
+DIC_temp=imfill(DIC_temp,'holes');
+%     figure(5); imshow(temp3);        
 
-    % For Fluorescence, Gaussian filter and open image
-    RFP_mask(:,:,i_z) = imfilter(RFP_temp, fspecial('gaussian', 5, 2));        
-    RFP_mask(:,:,i_z) = imopen(RFP_mask(:,:,i_z), strel('disk',4));
+% Crop borders
+DIC_temp(1:10,:) = 0;
+DIC_temp(:,1:10) = 0;
+DIC_temp(1014:1024,:) = 0;
+DIC_temp(:,1014:1024) = 0;
 
-    [pg_x{i_z}, pg_y{i_z}] = gradient(Phase_temp);
-    V_Phase = sqrt(pg_x{i_z}.^2 + pg_y{i_z}.^2);   
+DAPI_MaxP = max(DAPI_mask, [], 3);
+Cell_mask = DAPI_MaxP | DIC_temp;
+%     Cell_mask = Cell_mask | RFP_MaxP;
 
-    [gg_x{i_z}, gg_y{i_z}] = gradient(GFP_temp);
-    V_GFP = sqrt(gg_x{i_z}.^2 + gg_y{i_z}.^2);                  
+%     figure(7); imshowpair(mat2gray(Disp),DIC_temp);
+%     figure(8); imshowpair(mat2gray(Disp),Cell_mask);
 
-    Phase_mask(:,:,i_z) = imfill(V_Phase, 'holes');
-    Phase_mask(:,:,i_z) = imopen(Phase_mask(:,:,i_z), strel('disk',4));   
+%% Cell Segmentation
+% For each cell, count the number of nuclei inside.
+% If there are none: erase cell
+%               > 1: combine nuclei
+% Label the cell mask
+Temp = bwlabel(Cell_mask);
+for i2 = 1:max(Temp(:))
 
-    % For Fluorescence, Gaussian filter and open image
-    RFP_temp = imfilter(RFP_temp, fspecial('gaussian', 5, 2));        
-    RFP_temp = imopen(RFP_temp, strel('disk',4));
+    cell_pix = Temp==i2;
+    num_nucl = sort(unique(nonzeros(DAPI_MaxP(cell_pix))));
 
-    [rg_x{i_z}, rg_y{i_z}] = gradient(RFP_temp);
-    V_RFP = sqrt(rg_x{i_z}.^2 + rg_y{i_z}.^2);  
+    if size(num_nucl,1) == 0 
+        Cell_mask(cell_pix) = 0;
+    elseif size(num_nucl,1) > 1 
+        
+        
+        
+        for i3=num_nucl'
+            DAPI_mask(DAPI_mask==i3)=min(num_nucl);            
+        end
+        
+%         % OLD segment cells by watershed
+%         D = bwdist(nucl_pix);
+%         W = int8(watershed(D));
+%         W(~cell_pix) = 0;
+%         Cell_mask(cell_pix) = -1.*W(cell_pix);
+    end
+end
+% Cell_mask = logical(Cell_mask);
 
-    V_PG_composite = sqrt(pg_x{i_z}.^2 + pg_y{i_z}.^2 + gg_x{i_z}.^2 + gg_y{i_z}.^2);
-    V_PG_composite2 = sqrt(pg_x{i_z}.^2 + pg_y{i_z}.^2 + gg_x{i_z}.^2 + gg_y{i_z}.^2 + rg_x{i_z}.^2 + rg_y{i_z}.^2);
+clear cell_pix nucl_pix D W 
 
-    RFP_mask(:,:,i_z) = RFP_temp;
+%  Match label number of cells to label number of nuclei
+LcFull = zeros(size(Cell_mask));
+for i2 = int8(unique(nonzeros(DAPI_mask(:))))'
+    cell_num = sort(unique(nonzeros(Temp(DAPI_MaxP==i2))));
+    LcFull(Temp==cell_num) = -1*i2;
+end
+LcFull = -1*LcFull;
+clear i2 cell_num num_nucl Temp
+
 end
 
-%     clear RFP_temp GFP_temp Phase_temp
-
-
-%% 3) Normalize values [Min Max] -> [0.0 1.0]
-
-RFP_mask = mat2gray(RFP_mask);    
-GFP_mask = mat2gray(GFP_mask);
-Phase_mask = mat2gray(Phase_mask);       
-
-
-% 4.2) Threshold fluorescence images using graythresh (Otsu's method) 
-% Found that occassionally debris will produce crazy fluorescence, messing up thresholding.
-% So, threshold zlices independently and then take max projection 
-for i_z = 1:exp_.num_z(i_im)        
-    RFP_mask(:,:,i_z) = logical(im2bw(RFP_mask(:,:,i_z), graythresh(RFP_mask(:,:,i_z))));    
-end
-RFP_MaxP = max(RFP_mask, [], 3);        
-
-
-
-%% 5) Morphological processing
-% Open max projection of fluorescence maxP
-RFP_MaxP = imopen(RFP_MaxP, strel('disk', 20));
-
-
-Cell_mask(i_im) = RFP_MaxP
-
-end
